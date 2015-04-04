@@ -1,0 +1,105 @@
+#!/bin/sh
+base=`pwd`
+tmpdir=$base/tmp
+tc="ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- "
+src_repo="https://github.com/pazos/android_kernel_samsung_goyawifi.git"
+
+show_help(){
+	echo "usage:"
+	echo "./mklinux boot-img	--> Build a new boot.img based on ramdisk & kernel binaries or sources"
+    echo "./mklinux build		--> Forces a new kernel build and update kernel & module binaries"
+	echo "./mklinux menuconfig	--> Edit kernel configuration"
+	echo "./mklinux mrproper	--> Clean kernel tree"
+}
+
+check_source(){
+	if [ ! -d $base/linux ]; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+kernel_build(){
+ 	cd linux
+       if [ ! -f .config ]; then
+  		    make $tc goyawifi_defconfig
+       fi
+  	make $tc
+	cd $base
+  	cp linux/arch/arm/boot/zImage $base/
+	rm -rf $base/modules/* && mkdir -p $base/modules 
+  	find linux/ -name '*ko' -exec cp '{}' $base/modules \;
+}
+
+kernel_sync(){
+	echo "Error, kernel sources not found. Downloading from github.com"
+	git clone $src_repo linux
+}
+
+tmpdir_populate(){
+	mkdir -p $tmpdir
+	cp zImage $tmpdir/
+	cp -pR ramdisk/ $tmpdir/
+	cp -pR modules/*.ko $tmpdir/ramdisk/lib/modules
+	echo "bootsize =
+	pagesize = 0x800
+	kerneladdr = 0x10008000
+	ramdiskaddr = 0x11000000
+	secondaddr = 0x10f00000
+	tagsaddr = 0x10000100
+	name =
+	cmdline = " > $tmpdir/custom.cfg
+}
+
+create_bootimg(){
+	cd $tmpdir/ramdisk
+   #find . | cpio --create --format='newc' | gzip > ../ramdisk.img
+	find . | cpio --create --format='newc' | lzop > ../ramdisk.lzo
+	cd $tmpdir
+   #abootimg --create $base/boot.img -f custom.cfg -k zImage -r ramdisk.img >/dev/null 2>&1
+	abootimg --create $base/boot.img -f custom.cfg -k zImage -r ramdisk.lzo >/dev/null 2>&1
+	cd $base && rm -rf $tmpdir
+}
+
+
+case $1 in
+	build )
+	check_source
+	if [ $? -eq 1 ]; then
+      	kernel_sync
+	fi
+   	kernel_build
+	;;
+	menuconfig | mrproper )
+	check_source
+	if [ $? -eq 1 ]; then
+      	kernel_sync
+	fi
+	cd linux
+	case $1 in menuconfig )
+       	if [ ! -f .config ]; then make $tc goyawifi_defconfig; fi
+		;;
+	esac
+	make $tc $1
+	cd $base
+	;;
+	boot-img )
+	check_source
+	if [ $? -eq 1 ]; then
+      	kernel_sync
+	fi
+    
+	if [ ! -f $base/zImage ] || [ ! -d $base/modules ]; then
+   		kernel_build
+	else
+		echo "Prebuild kernel & modules found!, skiping kernel build"
+	fi
+	tmpdir_populate
+	create_bootimg
+	;;
+	* )
+	show_help
+	;;
+esac
+
