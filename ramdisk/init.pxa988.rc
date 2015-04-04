@@ -540,10 +540,10 @@ service sensord /system/bin/sensord
     user system
     group system
     
-service PowerDaemon /system/bin/logwrapper /system/bin/powerdaemon -A -D
-    class main
-    user system
-    group system input
+#service PowerDaemon /system/bin/logwrapper /system/bin/powerdaemon -A -D
+#    class main
+#    user system
+#    group system input
 
 
 # RTCC
